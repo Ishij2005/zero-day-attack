@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zero Day Attack Dashboard</title>
+
+    <style>
+        body {
+            font-family: Arial;
+            background: #0f172a;
+            color: white;
+            text-align: center;
+        }
+
+        h1 {
+            color: #38bdf8;
+            margin-top: 20px;
+        }
+
+        #logs {
+            width: 60%;
+            margin: auto;
+            margin-top: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .log {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .normal {
+            background: #22c55e;
+        }
+
+        .alert {
+            background: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>🚀 Zero Day Attack Monitor</h1>
+
+<div id="logs"></div>
+
+<script>
+async function fetchLogs() {
+    try {
+        const res = await fetch("http://127.0.0.1:5000/logs");
+        const data = await res.json();
+
+        let output = "";
+
+        data.reverse().forEach(log => {
+            log = log.trim();
+
+            if (log.includes("ALERT")) {
+                output += `<div class="log alert">${log}</div>`;
+            } else {
+                output += `<div class="log normal">${log}</div>`;
+            }
+        });
+
+        document.getElementById("logs").innerHTML = output;
+
+    } catch (error) {
+        document.getElementById("logs").innerHTML =
+            "<div style='color:red;'>⚠️ Cannot connect to backend</div>";
+    }
+}
+
+// 🔥 IMPORTANT: Load immediately
+fetchLogs();
+
+// 🔁 Auto refresh every 2 sec
+setInterval(fetchLogs, 2000);
+</script>
+
+</body>
+</html>
+
