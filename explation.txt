@@ -1,0 +1,311 @@
+# Zero-Day Attack Detection Dashboard: In-Depth Documentation
+
+---
+
+## 1. Backend (Python/Flask)
+
+### 1.1 app.py (Main API Server)
+- **Purpose:** Hosts the REST API for stats, logs, and trends. Handles CORS for frontend access.
+- **Key Endpoints:**
+  - `/api/stats`: Returns total logs, anomalies, detection rate, threat level, timestamp. Reads logs.txt, counts anomalies ("ALERT"), computes detection rate, and assigns threat level (LOW/MEDIUM/HIGH/CRITICAL).
+  - `/api/logs`: Paginated, filterable log stream. Supports `limit`, `offset`, and `filter` (all/normal/anomaly). Reads logs.txt, applies filter, reverses for newest first, paginates, and returns JSON.
+  - `/api/trends`: Returns anomaly counts bucketed by time (1h/1d/1w). Parses timestamps from logs, buckets anomalies, and returns a labeled trend array for charts.
+- **Other:**
+  - Uses absolute paths for log/index.html for reliability.
+  - Logs errors if logs.txt is missing/unreadable.
+
+### 1.2 model.py (ML Model)
+- **Purpose:** Implements Isolation Forest for anomaly detection.
+- **Logic:**
+  - Generates synthetic normal and anomaly data for training.
+  - Trains IsolationForest (contamination=0.1, i.e., 10% anomalies expected).
+  - `detect(data)`: Predicts if a sample is "Anomaly" or "Normal".
+
+### 1.3 monitor.py (Log Generator)
+- **Purpose:** Simulates real-time network traffic and writes logs.
+- **Logic:**
+  - 70% normal, 30% anomaly traffic (randomized).
+  - Generates 31-feature vectors (realistic values for each type).
+  - Uses model.py's `detect()` to classify.
+  - Logs result with timestamp to logs.txt ("ALERT" or "Traffic is normal").
+  - Sleeps 2 seconds between entries.
+
+---
+
+## 2. Frontend (React/TypeScript)
+
+### 2.1 src/components/StatsPanel.tsx
+- **Purpose:** Displays KPI cards for total logs, anomalies, detection rate, and clean traffic.
+- **Logic:**
+  - Each card has icon, color, formatting, and sublabel.
+  - Uses React.memo for granular updates: only re-renders if value or loading changes.
+  - Main panel only re-renders if any stat value changes.
+
+### 2.2 src/components/LogViewer.tsx
+- **Purpose:** Shows real-time logs with filtering, search, and auto-scroll.
+- **Logic:**
+  - Tabs for all/alerts/normal, search box, event count.
+  - Auto-scroll toggle, smooth scroll to bottom.
+  - Each log row: icon, timestamp, message, severity badge.
+  - Uses React.memo for efficient updates.
+
+### 2.3 src/components/Timeline.tsx
+- **Purpose:** Shows the 15 most recent anomaly events (threats) in a timeline.
+- **Logic:**
+  - Parses timestamp, message, and infers severity (critical/high/medium) from keywords.
+  - Color-codes and labels each entry.
+
+### 2.4 src/components/TrendChart.tsx
+- **Purpose:** Visualizes anomaly trends over time (1h/1d/1w) as an area chart.
+- **Logic:**
+  - Window selector (1h/1d/1w), custom tooltip, smooth animation.
+  - Uses recharts for rendering.
+
+### 2.5 src/components/ThreatHeatmap.tsx
+- **Purpose:** Bar chart showing anomaly distribution across time buckets.
+- **Logic:**
+  - Color intensity reflects anomaly count.
+  - Custom tooltip, heat scale legend.
+
+### 2.6 src/components/SettingsPanel.tsx
+- **Purpose:** Lets user set refresh interval (1-10s) and view system info.
+- **Logic:**
+  - Preset buttons, slider, and live display of current interval.
+  - Shows backend, ML model, status, and log source.
+
+### 2.7 src/services/api.ts
+- **Purpose:** API client for backend endpoints.
+- **Logic:**
+  - `fetchStats()`, `fetchLogs(offset, limit, filter)`, `fetchTrends(window)`
+  - Handles errors and returns parsed JSON.
+
+### 2.8 src/App.tsx (Main Dashboard)
+- **Purpose:** Orchestrates data fetching, state, and layout.
+- **Logic:**
+  - Fetches stats/logs/trends on interval (default 2s, configurable).
+  - Passes data to components as props.
+  - Memoizes views and callbacks for performance.
+  - Handles settings panel state.
+
+---
+
+## 3. Data Flow & UI/UX
+- **Backend** generates and serves data via REST API.
+- **Frontend** fetches data every N seconds, updates only changed values (not whole cards/pages).
+- **UI** is dark, responsive, and uses smooth transitions. No flashing or disruptive reloads.
+- **All components** are optimized with React.memo and custom comparison for minimal re-rendering.
+
+---
+
+## 4. How Everything Connects
+- **monitor.py** simulates traffic, writes logs.txt.
+- **app.py** reads logs.txt, exposes API for stats/logs/trends.
+- **api.ts** fetches data for React components.
+- **App.tsx** manages state and passes data to:
+  - StatsPanel (KPI cards)
+  - LogViewer (live logs)
+  - Timeline (recent threats)
+  - TrendChart (anomaly trends)
+  - ThreatHeatmap (distribution)
+  - SettingsPanel (refresh rate)
+
+---
+
+---
+
+# Zero-Day Attack Detection Dashboard: Deep Technical Documentation
+
+## 1. File Structure (with Roles)
+
+```
+zero-day-attack/
+├── backend/
+│   ├── app.py          # Flask REST API: endpoints, CORS, log parsing, stats/trends logic
+│   ├── model.py        # ML: Isolation Forest, feature vector simulation, anomaly detection
+│   ├── monitor.py      # Traffic generator: simulates network, invokes model, writes logs
+│   ├── logs.txt        # Persistent log store: timestamped, labeled events
+│   └── index.html      # (Legacy) Static HTML dashboard (unused in React version)
+└── frontend/
+    ├── src/
+    │   ├── components/
+    │   │   ├── Header.tsx         # Top nav, branding
+    │   │   ├── LogViewer.tsx      # Real-time log stream, filtering, search, auto-scroll
+    │   │   ├── StatsPanel.tsx     # KPI cards: total, anomalies, detection rate, normal
+    │   │   ├── Timeline.tsx       # Recent threats, severity parsing, time display
+    │   │   ├── TrendChart.tsx     # Area chart: anomaly trends (1h/1d/1w)
+    │   │   ├── ThreatHeatmap.tsx  # Bar chart: anomaly distribution, color scale
+    │   │   └── SettingsPanel.tsx  # Refresh rate, system info
+    │   ├── services/
+    │   │   └── api.ts             # API client: fetchStats, fetchLogs, fetchTrends
+    │   ├── App.tsx                # Main dashboard: state, data fetching, layout
+    │   ├── main.tsx               # React entry point
+    │   └── index.css              # TailwindCSS, custom styles
+    ├── vite.config.ts             # Vite build config
+    ├── tailwind.config.js         # Tailwind theme config
+    └── package.json               # NPM dependencies, scripts
+```
+
+## 2. Data Flow: End-to-End
+
+1. **Traffic Simulation (monitor.py)**
+   - Generates 31-feature vectors (float values) to mimic real network packets.
+   - 70% normal (N(0,1)), 30% anomaly (N(10,1)), simulating attack/noise.
+   - Each vector is passed to model.py’s `detect()`.
+
+2. **Anomaly Detection (model.py)**
+   - Isolation Forest (scikit-learn): unsupervised, tree-based, O(n log n) complexity.
+   - Trained on synthetic normal/anomaly data.
+   - `detect(data)` reshapes input, predicts: -1 (anomaly), 1 (normal).
+   - Returns “Anomaly” or “Normal”.
+
+3. **Logging (monitor.py)**
+   - Each event is timestamped: `[YYYY-MM-DD HH:MM:SS] ...`
+   - “ALERT: Anomaly detected!” for anomalies, “Traffic is normal” otherwise.
+   - Appends to logs.txt (persistent, append-only).
+
+4. **API Layer (app.py)**
+   - `/api/stats`: Reads logs.txt, counts, computes detection rate, assigns threat level.
+   - `/api/logs`: Reads logs.txt, applies filter (all/normal/anomaly), paginates, returns JSON.
+   - `/api/trends`: Parses timestamps, buckets anomalies by time window, returns for charting.
+
+5. **Frontend (React)**
+   - `api.ts` fetches stats, logs, trends every N seconds (configurable).
+   - `App.tsx` manages state, passes data to components.
+   - Components use React.memo and custom comparison for granular, performant updates.
+
+## 3. ML/Detection Logic (Technical)
+
+- **Isolation Forest**:
+  - Ensemble of binary trees; isolates outliers with fewer splits.
+  - `contamination=0.1`: 10% of data expected to be anomalous.
+  - No need for feature scaling; robust to high-dimensional, unlabeled data.
+  - Fast: O(n log n) for training/prediction.
+
+- **Feature Engineering**:
+  - In real-world: extract features like packet size, protocol, flags, timing, entropy, etc.
+  - Here: simulated vectors, but architecture supports real features.
+
+- **Threat Classification**:
+  - Any anomaly (model returns -1) is flagged as a “threat”.
+  - Detection rate = anomalies / total events.
+  - Threat level:
+    - LOW (<10%), MEDIUM (10-30%), HIGH (30-50%), CRITICAL (>50%).
+
+## 4. API Mechanics (Detailed)
+
+- **/api/stats**:
+  - Reads all logs, counts total, anomalies, normal.
+  - Computes detection rate, assigns threat level.
+  - Returns JSON: `{ total_logs, anomalies, normal, detection_rate, threat_level, timestamp }`
+
+- **/api/logs**:
+  - Reads logs, applies filter (all/normal/anomaly).
+  - Reverses for newest-first, paginates by `offset` and `limit`.
+  - Returns JSON: `{ logs, total, offset, limit, has_more }`
+
+- **/api/trends**:
+  - Reads logs, extracts timestamps, buckets anomalies by window (1h/1d/1w).
+  - Returns JSON: `{ window, total_anomalies, in_window, trends: [{label, anomalies, timestamp}] }`
+
+## 5. Frontend Engineering
+
+- **StatsPanel.tsx**: KPI cards, React.memo, only re-renders if value changes.
+- **LogViewer.tsx**: Real-time log stream, filter/search, auto-scroll, efficient rendering.
+- **Timeline.tsx**: Shows last 15 anomalies, parses severity from message.
+- **TrendChart.tsx**: Area chart, window selector, recharts, custom tooltip.
+- **ThreatHeatmap.tsx**: Bar chart, color scale by anomaly count.
+- **SettingsPanel.tsx**: Refresh interval, system info, slider/buttons.
+
+- **Performance**: All components use React.memo with custom comparison for minimal re-rendering.
+
+## 6. Security & Professional Considerations
+
+- **Data Integrity**: logs.txt is append-only; in production, use a database or log aggregator.
+- **Scalability**: Flask is synchronous; for high-throughput, use async frameworks (FastAPI, aiohttp) or WSGI servers (gunicorn, uWSGI).
+- **Extensibility**: Swap in real packet capture, add new ML models, integrate with SIEMs, add alerting.
+- **False Positives/Negatives**: Tune contamination, retrain with real data, add analyst feedback loop.
+- **Deployment**: Containerize with Docker, use CI/CD, monitor with Prometheus/Grafana.
+
+## 7. Advanced Interview Questions & Answers
+
+**Q: How would you adapt this for real network traffic?**  
+A: Replace monitor.py with a packet sniffer (e.g., scapy), extract real features, and feed to the model. Store logs in a database for scale.
+
+**Q: How do you handle concept drift?**  
+A: Periodically retrain the model with recent data, monitor for changes in traffic patterns, and use online learning if needed.
+
+**Q: How do you minimize false positives?**  
+A: Use ensemble models, context-aware rules, and allow analyst feedback to retrain and tune thresholds.
+
+**Q: How would you secure the API?**  
+A: Add authentication (JWT, OAuth), rate limiting, input validation, and HTTPS.
+
+**Q: How do you ensure high availability?**  
+A: Deploy behind a load balancer, use stateless services, persistent storage, and health checks.
+
+**Q: How do you visualize high-volume data efficiently?**  
+A: Use windowed queries, downsampling, and virtualized lists/charts in the frontend.
+
+---
+
+---
+
+## Features & Technical Depth
+
+### 1. Real-Time Anomaly Detection
+- **ML Model:** Uses Isolation Forest, an unsupervised algorithm ideal for outlier detection in high-dimensional, unlabeled data.
+- **Feature Vectors:** Each “packet” is a 31-dimensional float array (simulated, but in production would be real network features).
+- **Detection:** Model predicts -1 (anomaly) or 1 (normal). Anomalies are flagged as threats.
+
+### 2. Log Generation & Storage
+- **monitor.py:** Simulates traffic, classifies each event, and appends a timestamped log to logs.txt.
+- **Persistence:** logs.txt is append-only, ensuring auditability and replay.
+
+### 3. RESTful API (Flask)
+- **/api/stats:** Aggregates logs, computes total, anomalies, detection rate, and assigns threat level.
+- **/api/logs:** Supports pagination, filtering (all/normal/anomaly), and returns logs for the UI.
+- **/api/trends:** Buckets anomalies by time (hour/day/week) for trend visualization.
+
+### 4. Frontend Dashboard (React)
+- **StatsPanel:** KPI cards for total events, anomalies, detection rate, and normal traffic. Uses React.memo for granular updates.
+- **LogViewer:** Real-time log stream with filtering, search, and auto-scroll. Efficient rendering for high-volume data.
+- **Timeline:** Shows the 15 most recent threats, parses severity, and displays time.
+- **TrendChart:** Area chart of anomaly trends, window selector (1h/1d/1w), recharts for smooth animation.
+- **ThreatHeatmap:** Bar chart visualizing anomaly distribution, color-coded by intensity.
+- **SettingsPanel:** Lets users set refresh interval and view system info.
+
+### 5. Data Flow & Performance
+- **Polling:** Frontend fetches data every N seconds (configurable).
+- **Granular Updates:** Only changed values/components re-render, ensuring a smooth UX.
+- **Memoization:** All major components use React.memo with custom comparison for performance.
+
+### 6. Security & Scalability
+- **CORS:** Configured for safe frontend-backend communication.
+- **Extensibility:** Easily swap in real packet capture, new ML models, or integrate with SIEMs.
+- **Scalability:** Flask is simple; for production, use async frameworks or scale horizontally.
+
+---
+
+## Advanced Interview Q&A
+
+**Q: How does the system distinguish between normal and attack traffic?**  
+A: By training the Isolation Forest on both normal and simulated attack data, the model learns to isolate outliers (anomalies) based on statistical rarity in the feature space.
+
+**Q: What are the main challenges in real-world deployment?**  
+A: Feature extraction from real packets, handling encrypted traffic, concept drift, false positives, and scaling log storage/processing.
+
+**Q: How would you improve detection accuracy?**  
+A: Use richer features, ensemble models, feedback loops, and periodic retraining with labeled data.
+
+**Q: How is the UI optimized for real-time data?**  
+A: By memoizing components, using efficient data structures, and only updating changed values, the UI remains responsive even with frequent updates.
+
+**Q: How would you secure and scale the backend?**  
+A: Add authentication, rate limiting, input validation, deploy with WSGI servers, and use a database for logs.
+
+**Q: How can this system be extended?**  
+A: Integrate with real network taps, add alerting, support multi-user dashboards, and connect to external threat intelligence feeds.
+
+---
+
+If you want even more technical depth on any specific feature, file, or algorithm, let me know!
